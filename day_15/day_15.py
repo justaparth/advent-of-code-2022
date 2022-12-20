@@ -1,4 +1,5 @@
 from __future__ import annotations
+from enum import IntEnum
 import unittest
 from dataclasses import dataclass
 import re
@@ -18,7 +19,6 @@ class Sensor:
     beacon_x: int
     beacon_y: int
     exclusion_dist: int
-    exclusion_zone: Box
 
     def __init__(self, x: int, y: int, beacon_x: int, beacon_y: int):
         self.x = x
@@ -28,7 +28,6 @@ class Sensor:
 
         dist = mdist(x, y, beacon_x, beacon_y)
         self.exclusion_dist = dist
-        self.exclusion_zone = Box(x - dist, y - dist, x + dist, y + dist)
 
     def within_zone(self, x: int, y: int) -> bool:
         return mdist(self.x, self.y, x, y) <= self.exclusion_dist
@@ -41,20 +40,51 @@ class Sensor:
         return self.x - maximum_x_delta, self.x + maximum_x_delta
 
 
-@dataclass
-class Box:
-    minx: int
-    miny: int
-    maxx: int
-    maxy: int
+class RangeType(IntEnum):
+    START = 1
+    END = 2
 
-    def union(a: Box, b: Box) -> Box:
-        return Box(
-            min(a.minx, b.minx),
-            min(a.miny, b.miny),
-            max(a.maxx, b.maxx),
-            max(a.maxy, b.maxy),
-        )
+
+class LineRanges:
+    elems: list[tuple[int, RangeType]]
+
+    def __init__(self, sensors: list[Sensor], y: int):
+        elems = []
+        for sensor in sensors:
+            res = sensor.exclusion_zone_on_line(y)
+            if res is not None:
+                elems.append((res[0], RangeType.START))
+                elems.append((res[1], RangeType.END))
+        elems.sort()
+        self.elems = elems
+
+    def interval_covered(self) -> tuple[int, int]:
+        return self.elems[0][0], self.elems[-1][0]
+
+    def find_gap(self) -> list[tuple[int, int]]:
+        open_ranges: list[tuple[int, int]] = []
+        if len(self.elems) == 0:
+            return open_ranges
+
+        open_stack = [self.elems[0][0]]
+        prev_end = self.elems[0][0]
+
+        for p in self.elems[1:]:
+            val, type = p
+            if type == RangeType.END:
+                open_stack.pop()
+                prev_end = val
+            else:
+                # if we are starting a new interval with no
+                # existing open interval, check if the interval
+                # starts where the last one left off.
+                # if not, we know where the opening is
+                if len(open_stack) == 0:
+                    if val > prev_end + 1:
+                        open_ranges.append((prev_end + 1, val - 1))
+                open_stack.append(val)
+
+        return open_ranges
 
 
 def parse_lines(contents: str) -> list[Sensor]:
@@ -73,116 +103,26 @@ def parse_lines(contents: str) -> list[Sensor]:
 
 
 def part_1(sensors: list[Sensor], line_to_check: int) -> int:
-    # first, figure out the maximum zone where things could be excluded
-    exclusion_zone = Box(0, 0, 0, 0)
-    for sensor in sensors:
-        exclusion_zone = Box.union(exclusion_zone, sensor.exclusion_zone)
+    line = LineRanges(sensors, line_to_check)
+    open_ranges = line.find_gap()
+    start, end = line.interval_covered()
+    print(open_ranges, start, end)
 
-    # next, construct a list of all existing beacons
-    beacons = set()
-    for sensor in sensors:
-        beacons.add((sensor.beacon_x, sensor.beacon_y))
-    print("maximum exclusion zone", exclusion_zone)
-
-    # now, lets check the possible exclusion zone, accounting
-    # for places where there are already beacons as well
-    # i think this is checking _way_ more than it needs to.
-    # for each sensor, once the point gets further away we should stop checking it but
-    # i don't wanna do that right now
-    count = 0
-    for x in range(exclusion_zone.minx, exclusion_zone.maxx + 1):
-        # if its a beacon, continue
-        if (x, line_to_check) in beacons:
-            continue
-
-        # otherwise, if its blocked by any sensor then count it
-        for sensor in sensors:
-            if sensor.within_zone(x, line_to_check):
-                count += 1
-                break
+    count = end - start
+    for range in open_ranges:
+        count -= range[1] - range[0]
 
     return count
 
 
-START = 1
-END = 2
-
-
-@dataclass(order=True)
-class Point:
-    val: int
-    type: int
-
-    def __str__(self) -> str:
-        if self.type == START:
-            return f"S{self.val}"
-        else:
-            return f"E{self.val}"
-
-    def __repr__(self) -> str:
-        return str(self)
-
-
 def part_2(sensors: list[Sensor], min_pos: int, max_pos: int) -> int:
-    # first, figure out the maximum zone where things could be excluded
-    exclusion_zone = Box(min_pos, min_pos, max_pos, max_pos)
-
-    # next, construct a list of all existing beacons
-    beacons = set()
-    for sensor in sensors:
-        beacons.add(f"X{sensor.beacon_x}Y{sensor.beacon_y}")
-    print("maximum exclusion zone", exclusion_zone)
-
-    # now, lets check the entire exclusion zone
-    for y in range(exclusion_zone.miny, exclusion_zone.maxy + 1):
-        points = []
-        for sensor in sensors:
-            res = sensor.exclusion_zone_on_line(y)
-            if res is None:
-                continue
-            start, end = res
-            points.append(Point(start, START))
-            points.append(Point(end, END))
-
-        points.sort()
-
-        open_stack = [points[0].val]
-        prev_end = points[0].val
-
-        empty_spots = False
-        for p in points[1:]:
-            if p.type == END:
-                open_stack.pop()
-                prev_end = p.val
-            else:
-                # in case we have an empty stack
-                if len(open_stack) == 0:
-                    # we can only open a new interval if we start
-                    # where the old one left off
-                    if p.val > prev_end + 1:
-                        empty_spots = True
-                        break
-                open_stack.append(p.val)
-
-        if y % 10000 == 0:
-            print(y)
-        if not empty_spots:
-            continue
-
-        print(points, y, "trying")
-        for x in range(exclusion_zone.minx, exclusion_zone.maxx + 1):
-            if f"X{x}Y{y}" in beacons:
-                continue
-
-            possible = True
-            # otherwise, if its blocked by any sensor then count it
-            for sensor in sensors:
-                if sensor.within_zone(x, y):
-                    possible = False
-                    break
-
-            if possible:
-                return x * 4000000 + y
+    for y in range(min_pos, max_pos + 1):
+        line = LineRanges(sensors, y)
+        open_ranges = line.find_gap()
+        if len(open_ranges) > 0:
+            # we know by the problem statement there should be exactly one range
+            print(open_ranges)
+            return open_ranges[0][0] * 4000000 + y
 
     return -1
 
@@ -191,9 +131,9 @@ def main():
     with open("day_15_input.txt", "r") as f:
         contents = f.read().strip()
         lines = parse_lines(contents)
-        # result_1 = part_1(lines, 2000000)
+        result_1 = part_1(lines, 2000000)
         result_2 = part_2(lines, 0, 4000000)
-        # print(f"part 1: {result_1}")
+        print(f"part 1: {result_1}")
         print(f"part 2: {result_2}")
 
 
@@ -215,9 +155,9 @@ Sensor at x=14, y=3: closest beacon is at x=15, y=3
 Sensor at x=20, y=1: closest beacon is at x=15, y=3
 """.strip()
 
-    # def test_part1(self):
-    #     lines = parse_lines(self.input)
-    #     self.assertEqual(26, part_1(lines, 10))
+    def test_part1(self):
+        lines = parse_lines(self.input)
+        self.assertEqual(26, part_1(lines, 10))
 
     def test_part2(self):
         lines = parse_lines(self.input)
