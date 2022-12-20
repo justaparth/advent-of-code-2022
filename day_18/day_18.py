@@ -39,27 +39,120 @@ def surface_area(shape: set[tuple[int, int, int]]) -> int:
     return total
 
 
-# class Lava:
-#     shape: set[tuple[int, int, int]]
-#     maxx: int
-#     maxy: int
-#     maxz: int
+class Lava:
+    shape: set[tuple[int, int, int]]
+    maxx: int
+    maxy: int
+    maxz: int
 
-#     def __init__(self, shape: set[tuple[int, int, int]]):
-#         self.shape = shape
-#         maxx = -1
-#         maxy = -1
-#         maxz = -1
+    def __init__(self, shape: set[tuple[int, int, int]]):
+        self.shape = shape
+        maxx = -1
+        maxy = -1
+        maxz = -1
 
-#         # figure out bounds of the shape
-#         for pt in shape:
-#             maxx = max(maxx, pt[0])
-#             maxy = max(maxy, pt[1])
-#             maxz = max(maxz, pt[2])
+        # figure out bounds of the shape
+        for pt in shape:
+            maxx = max(maxx, pt[0])
+            maxy = max(maxy, pt[1])
+            maxz = max(maxz, pt[2])
 
-#         self.maxx = maxx
-#         self.maxy = maxy
-#         self.maxz = maxz
+        self.maxx = maxx
+        self.maxy = maxy
+        self.maxz = maxz
+
+    def total_surface_area(self) -> int:
+        return surface_area(self.shape)
+
+    def in_bounds(self, x: int, y: int, z: int) -> bool:
+        return (
+            x >= 0
+            and x <= self.maxx
+            and y >= 0
+            and y <= self.maxy
+            and z >= 0
+            and z <= self.maxz
+        )
+
+    def accessible_surface_area(self) -> int:
+        base = self.total_surface_area()
+
+        visited: set[tuple[int, int, int]] = set()
+        for x in range(0, self.maxx + 1):
+            for y in range(0, self.maxy + 1):
+                for z in range(0, self.maxz + 1):
+                    if (x, y, z) in self.shape:
+                        continue
+
+                    # don't re-do calculations unnecessarily
+                    if (x, y, z) in visited:
+                        continue
+
+                    # do dfs which mutates state jesus
+                    amt = self.dfs(x, y, z, visited)
+                    print("found to remove ", amt)
+                    base -= amt
+        return base
+
+    def dfs(
+        self,
+        sx: int,
+        sy: int,
+        sz: int,
+        visited: set[tuple[int, int, int]],
+    ) -> int:
+
+        total = 0
+
+        # bfs into empty point
+        space: set[tuple[int, int, int]] = set()
+        found_air = False
+        q = deque([(sx, sy, sz)])
+        while len(q) != 0:
+            # get next
+            elem = q.popleft()
+            x, y, z = elem
+
+            # skip seen elements
+            if elem in visited:
+                continue
+
+            # add to current shape and also leave off visited
+            space.add(elem)
+            visited.add(elem)
+
+            if (
+                x <= 0
+                or x >= self.maxx
+                or y <= 0
+                or y >= self.maxy
+                or z <= 0
+                or z >= self.maxz
+            ):
+                found_air = True
+
+            # look every direction we can
+            candidates = [
+                (x, y, z + 1),
+                (x, y, z - 1),
+                (x, y + 1, z),
+                (x, y - 1, z),
+                (x + 1, y, z),
+                (x - 1, y, z),
+            ]
+
+            for c in candidates:
+                if not self.in_bounds(c[0], c[1], c[2]):
+                    continue
+                if c not in self.shape:
+                    q.append(c)
+
+        if found_air:
+            return 0
+        else:
+            surf = surface_area(space)
+            print(f"surface area of {space} is {surf}")
+            return surf
 
 
 def part_1(contents: str) -> int:
@@ -71,7 +164,7 @@ def part_1(contents: str) -> int:
     for x, y, z in lines:
         shape.add((x, y, z))
 
-    return surface_area(shape)
+    return Lava(shape).total_surface_area()
 
 
 def part_2(contents: str) -> int:
@@ -82,101 +175,7 @@ def part_2(contents: str) -> int:
     shape: set[tuple[int, int, int]] = set()
     for x, y, z in lines:
         shape.add((x, y, z))
-    total = surface_area(shape)
-
-    maxx = -1
-    maxy = -1
-    maxz = -1
-
-    # figure out bounds of the shape
-    for pt in shape:
-        maxx = max(maxx, pt[0])
-        maxy = max(maxy, pt[1])
-        maxz = max(maxz, pt[2])
-
-    # adjust for empty pockets
-    visited: set[tuple[int, int, int]] = set()
-    for x in range(0, maxx + 1):
-        for y in range(0, maxy + 1):
-            for z in range(0, maxz + 1):
-                if (x, y, z) in shape:
-                    continue
-
-                # don't re-do calculations unnecessarily
-                if (x, y, z) in visited:
-                    continue
-
-                # do dfs which mutates state jesus
-                amt = dfs(x, y, z, maxx, maxy, maxz, shape, visited)
-                print("found ", amt)
-                total -= amt
-
-    return total
-
-
-def dfs(
-    sx: int,
-    sy: int,
-    sz: int,
-    maxx: int,
-    maxy: int,
-    maxz: int,
-    shape: set[tuple[int, int, int]],
-    visited: set[tuple[int, int, int]],
-) -> int:
-
-    total = 0
-
-    # we found an empty point
-    # now, let's bfs
-    space: set[tuple[int, int, int]] = set()
-    found_air = False
-    q = deque([(sx, sy, sz)])
-    while len(q) != 0:
-        # get next
-        elem = q.popleft()
-        x, y, z = elem
-
-        # skip seen elements
-        if elem in visited:
-            continue
-
-        # add to current shape and also leave off visited
-        space.add(elem)
-        visited.add(elem)
-
-        if x <= 0 or x >= maxx or y <= 0 or y >= maxy or z <= 0 or z >= maxz:
-            found_air = True
-
-        # look every direction we can
-        candidates = [
-            (x, y, z + 1),
-            (x, y, z - 1),
-            (x, y + 1, z),
-            (x, y - 1, z),
-            (x + 1, y, z),
-            (x - 1, y, z),
-        ]
-
-        for c in candidates:
-            if (
-                c[0] < 0
-                or c[0] > maxx
-                or c[1] < 0
-                or c[1] > maxy
-                or c[2] < 0
-                or c[2] > maxz
-            ):
-                continue
-            if c not in shape:
-                q.append(c)
-
-    if found_air:
-        return 0
-    else:
-        surf = surface_area(space)
-        print(f"surface area of {space} is {surf}")
-        return surf
+    return Lava(shape).accessible_surface_area()
 
 
 def main():
