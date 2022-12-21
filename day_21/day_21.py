@@ -7,6 +7,8 @@ from enum import Enum
 from typing import Optional
 
 
+# it might have been better to do an ADT between 2 node types
+# but maybe will follow up in the future or something
 @dataclass(frozen=True)
 class Node:
     name: str
@@ -18,7 +20,7 @@ class Node:
         strs = []
         if self.left is not None and self.right is not None:
             strs.append(self.left.inorder())
-            strs.append(str(self.val))  # type hack. adt would be better here
+            strs.append(str(self.val))
             strs.append(self.right.inorder())
             return "(" + " ".join(strs) + ")"
         else:
@@ -73,7 +75,7 @@ class Formula:
     op: str
 
 
-def part_1(contents: str) -> int:
+def parsed_contents(contents: str) -> dict[str, Formula | int]:
     graph: dict[str, Formula | int] = {}
 
     for line in contents.split("\n"):
@@ -84,35 +86,32 @@ def part_1(contents: str) -> int:
         else:
             graph[monkey] = Formula(parts[0], parts[2], parts[1])
 
+    return graph
+
+
+def part_1(contents: str) -> int:
+    graph = parsed_contents(contents)
     tree = build_tree(graph, "root")
     return tree.compute()
 
 
 def part_2(contents: str) -> int:
-    graph: dict[str, Formula | int] = {}
-
-    for line in contents.split("\n"):
-        monkey, formula = line.split(": ")
-        parts = formula.strip().split(" ")
-        if len(parts) == 1:
-            graph[monkey] = int(parts[0])
-        else:
-            graph[monkey] = Formula(parts[0], parts[2], parts[1])
+    graph = parsed_contents(contents)
 
     root = graph["root"]
     if isinstance(root, int):
-        raise Exception("cant' happen")
+        raise Exception("root found to have a value, this isn't right for part 2")
 
     search = build_tree(graph, root.left)
     soln = build_tree(graph, root.right)
 
-    # do a quick swap just to make sure that search has humn
+    # do a quick swap just to make sure that "search" has humn and "soln" doesn't
     if soln.contains_node("humn"):
         temp = search
         search = soln
         soln = temp
 
-    # okay, we're basicalyl going to try to find humn
+    # traverse the tree trying to find humn, and reversing operations
     while True:
         if search.name == "humn":
             break
@@ -120,16 +119,18 @@ def part_2(contents: str) -> int:
         if search.left is None or search.right is None:
             raise Exception("you messed up")
 
-        op: str = search.val
+        op: str = str(search.val)
         newop = flip(op)  # it'll be a string don't worry
 
-        # the left case is easy, we just move stuff over easily
+        # the left case is easy, we just move stuff over to the other side
         if search.left.contains_node("humn"):
             newnode = Node(search.name, newop, left=soln, right=search.right)
             soln = newnode
             search = search.left
 
-        # the right case is hard because we have to do additional work
+        # the right case is hard because we need to undo some of the signs / division
+        # e.g. 10 - x = 5, you have to subtract 10 and then also multiply by negative one
+        # to fully get x by itself
         elif search.right.contains_node("humn"):
             if op == "+":
                 soln = Node(search.name, "-", left=soln, right=search.left)
@@ -147,7 +148,7 @@ def part_2(contents: str) -> int:
 
             search = search.right
         else:
-            raise Exception("idk")
+            raise Exception("we lost humn")
 
     return soln.compute()
 
@@ -162,7 +163,7 @@ def flip(op: str) -> str:
     elif op == "/":
         return "*"
     else:
-        raise Exception("sadge")
+        raise Exception("hmm")
 
 
 def main():
